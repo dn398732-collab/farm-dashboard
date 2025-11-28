@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌾 Farm Monitor Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .status-bar {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 30px;
+            text-align: center;
+            color: white;
+        }
+        
+        .sensor-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        
+        .temp-card .card-icon { color: #ff6b6b; }
+        .humidity-card .card-icon { color: #4ecdc4; }
+        .soil-card .card-icon { color: #45b7d1; }
+        
+        .card-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .card-label {
+            font-size: 1.2em;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .status-indicator {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .status-good { background: #d4edda; color: #155724; }
+        .status-warning { background: #fff3cd; color: #856404; }
+        .status-danger { background: #f8d7da; color: #721c24; }
+        
+        .chart-container {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .chart-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+            text-align: center;
+        }
+        
+        .alerts {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+        
+        .alert {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        
+        .alert i {
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        
+        @media (max-width: 768px) {
+            .sensor-cards {
+                grid-template-columns: 1fr;
+            }
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌾 Farm Monitor Dashboard</h1>
+            <p>Real-time monitoring of your crops</p>
+        </div>
+        
+        <div class="status-bar">
+            <span id="connection-status">📡 Connecting to sensors...</span>
+        </div>
+        
+        <div class="sensor-cards">
+            <div class="card temp-card">
+                <div class="card-icon">🌡️</div>
+                <div class="card-value" id="temperature">--</div>
+                <div class="card-label">Temperature (°C)</div>
+                <div class="status-indicator" id="temp-status">Loading...</div>
+            </div>
+            
+            <div class="card humidity-card">
+                <div class="card-icon">💧</div>
+                <div class="card-value" id="humidity">--</div>
+                <div class="card-label">Humidity (%)</div>
+                <div class="status-indicator" id="humidity-status">Loading...</div>
+            </div>
+            
+            <div class="card soil-card">
+                <div class="card-icon">🌱</div>
+                <div class="card-value" id="soil-moisture">--</div>
+                <div class="card-label">Soil Moisture (%)</div>
+                <div class="status-indicator" id="soil-status">Loading...</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">📊 Sensor Trends (Last 20 Readings)</div>
+            <canvas id="sensorChart"></canvas>
+        </div>
+        
+        <div class="alerts">
+            <h3 style="margin-bottom: 20px; color: #333;">🚨 Farm Alerts</h3>
+            <div id="alerts-container">
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    Waiting for sensor data...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Chart setup
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: [],
+                    borderColor: '#ff6b6b',
+                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Humidity (%)',
+                    data: [],
+                    borderColor: '#4ecdc4',
+                    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Soil Moisture (%)',
+                    data: [],
+                    borderColor: '#45b7d1',
+                    backgroundColor: 'rgba(69, 183, 209, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                }
+            }
+        });
+
+        function getStatus(value, type) {
+            if (type === 'temperature') {
+                if (value >= 20 && value <= 30) return { text: 'Optimal', class: 'status-good' };
+                if (value >= 15 && value <= 35) return { text: 'Good', class: 'status-warning' };
+                return { text: 'Critical', class: 'status-danger' };
+            }
+            if (type === 'humidity') {
+                if (value >= 40 && value <= 70) return { text: 'Optimal', class: 'status-good' };
+                if (value >= 30 && value <= 80) return { text: 'Good', class: 'status-warning' };
+                return { text: 'Critical', class: 'status-danger' };
+            }
+            if (type === 'soil') {
+                if (value >= 40 && value <= 80) return { text: 'Optimal', class: 'status-good' };
+                if (value >= 20 && value <= 90) return { text: 'Good', class: 'status-warning' };
+                return { text: 'Critical', class: 'status-danger' };
+            }
+        }
+
+        function generateAlerts(data) {
+            const alerts = [];
+            
+            if (data.temperature > 35) {
+                alerts.push({ type: 'danger', icon: 'fas fa-thermometer-full', message: 'High temperature! Provide shade or cooling.' });
+            } else if (data.temperature < 15) {
+                alerts.push({ type: 'warning', icon: 'fas fa-thermometer-empty', message: 'Low temperature. Monitor for frost damage.' });
+            }
+            
+            if (data.humidity > 80) {
+                alerts.push({ type: 'warning', icon: 'fas fa-tint', message: 'High humidity. Watch for fungal diseases.' });
+            } else if (data.humidity < 30) {
+                alerts.push({ type: 'warning', icon: 'fas fa-sun', message: 'Low humidity. Consider misting plants.' });
+            }
+            
+            if (data.soilMoisture < 30) {
+                alerts.push({ type: 'danger', icon: 'fas fa-seedling', message: 'Soil is dry! Irrigation needed immediately.' });
+            } else if (data.soilMoisture > 80) {
+                alerts.push({ type: 'warning', icon: 'fas fa-water', message: 'Soil is very wet. Check drainage.' });
+            }
+            
+            if (alerts.length === 0) {
+                alerts.push({ type: 'success', icon: 'fas fa-check-circle', message: 'All conditions are optimal for crop growth!' });
+            }
+            
+            return alerts;
+        }
+
+        async function updateDashboard() {
+            try {
+                const response = await fetch('/api/current-data');
+                const data = await response.json();
+                
+                if (data.temperature !== undefined) {
+                    // Update values
+                    document.getElementById('temperature').textContent = data.temperature.toFixed(1);
+                    document.getElementById('humidity').textContent = data.humidity.toFixed(1);
+                    document.getElementById('soil-moisture').textContent = data.soilMoisture;
+                    
+                    // Update status indicators
+                    const tempStatus = getStatus(data.temperature, 'temperature');
+                    const humidityStatus = getStatus(data.humidity, 'humidity');
+                    const soilStatus = getStatus(data.soilMoisture, 'soil');
+                    
+                    document.getElementById('temp-status').textContent = tempStatus.text;
+                    document.getElementById('temp-status').className = 'status-indicator ' + tempStatus.class;
+                    
+                    document.getElementById('humidity-status').textContent = humidityStatus.text;
+                    document.getElementById('humidity-status').className = 'status-indicator ' + humidityStatus.class;
+                    
+                    document.getElementById('soil-status').textContent = soilStatus.text;
+                    document.getElementById('soil-status').className = 'status-indicator ' + soilStatus.class;
+                    
+                    // Update connection status
+                    document.getElementById('connection-status').innerHTML = '📡 Connected • Last update: ' + new Date().toLocaleTimeString();
+                    
+                    // Generate and display alerts
+                    const alerts = generateAlerts(data);
+                    const alertsContainer = document.getElementById('alerts-container');
+                    alertsContainer.innerHTML = alerts.map(alert => 
+                        `<div class="alert alert-${alert.type}">
+                            <i class="${alert.icon}"></i>
+                            ${alert.message}
+                        </div>`
+                    ).join('');
+                }
+                
+                // Update chart
+                const historyResponse = await fetch('/api/history');
+                const history = await historyResponse.json();
+                
+                if (history.length > 0) {
+                    const last20 = history.slice(-20);
+                    chart.data.labels = last20.map(d => new Date(d.timestamp).toLocaleTimeString());
+                    chart.data.datasets[0].data = last20.map(d => d.temperature);
+                    chart.data.datasets[1].data = last20.map(d => d.humidity);
+                    chart.data.datasets[2].data = last20.map(d => d.soilMoisture);
+                    chart.update();
+                }
+                
+            } catch (error) {
+                document.getElementById('connection-status').innerHTML = '❌ Connection lost • Retrying...';
+                console.error('Error updating dashboard:', error);
+            }
+        }
+
+        // Update every 5 seconds
+        updateDashboard();
+        setInterval(updateDashboard, 5000);
+    </script>
+</body>
+</html>
