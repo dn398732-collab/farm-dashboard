@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LineChart } from 'react-native-chart-kit';
+import { WEATHER_CONFIG, FARMING_ADVICE } from './config';
+import { NETWORK_CONFIG } from './network-config';
 
 const { width } = Dimensions.get('window');
 
@@ -12,6 +14,10 @@ export default function App() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [weatherData, setWeatherData] = useState(null);
+  const [hourlyForecast, setHourlyForecast] = useState([]);
+  const [dailyForecast, setDailyForecast] = useState([]);
+  const [forecastType, setForecastType] = useState('daily'); // 'hourly' or 'daily'
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // 'connected', 'disconnected', 'connecting'
   const [settings, setSettings] = useState({
     notifications: true,
     autoRefresh: true,
@@ -46,46 +52,74 @@ export default function App() {
   ];
 
   const fetchData = async () => {
-    try {
-      // Try ESP32 direct connection first
-      let response = await fetch('http://192.168.4.1/api/sensor-data', { timeout: 3000 });
-      if (!response.ok) {
-        // Fallback to Node.js server
-        response = await fetch('http://10.56.190.55:3000/api/current-data', { timeout: 3000 });
+    const { ENDPOINTS, TIMEOUT, RETRY_ATTEMPTS, RETRY_DELAY } = NETWORK_CONFIG;
+    setConnectionStatus('connecting');
+
+    for (const endpoint of ENDPOINTS) {
+      for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
+          
+          const response = await fetch(endpoint, {
+            signal: controller.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache',
+            },
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.json();
+            setSensorData(data);
+            setLastUpdate(new Date());
+            setConnectionStatus('connected');
+            
+            // Update history
+            setHistory(prev => {
+              const newHistory = [...prev, { ...data, time: new Date().toLocaleTimeString(), timestamp: Date.now() }];
+              return newHistory.slice(-50);
+            });
+            return; // Success, exit function
+          }
+        } catch (error) {
+          console.log(`Attempt ${attempt}/${RETRY_ATTEMPTS} failed for ${endpoint}:`, error.message);
+          
+          if (attempt < RETRY_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          }
+        }
       }
-      const data = await response.json();
-      setSensorData(data);
-      setLastUpdate(new Date());
-      
-      // Update history
-      setHistory(prev => {
-        const newHistory = [...prev, { ...data, time: new Date().toLocaleTimeString(), timestamp: Date.now() }];
-        return newHistory.slice(-50); // Keep last 50 readings
-      });
-    } catch (error) {
-      console.log('Connection failed, using demo data');
-      // Demo data for testing
-      const demoData = {
-        temperature: 25 + Math.random() * 5,
-        humidity: 60 + Math.random() * 10,
-        soilMoisture: 70 + Math.random() * 10
-      };
-      setSensorData(demoData);
-      setLastUpdate(new Date());
-      
-      // Add to history for demo
-      setHistory(prev => {
-        const newHistory = [...prev, { ...demoData, time: new Date().toLocaleTimeString(), timestamp: Date.now() }];
-        return newHistory.slice(-50);
-      });
     }
+    
+    // All endpoints failed, use demo data
+    console.log('All connections failed, using demo data');
+    setConnectionStatus('disconnected');
+    const demoData = {
+      temperature: 25 + Math.random() * 5,
+      humidity: 60 + Math.random() * 10,
+      soilMoisture: 70 + Math.random() * 10
+    };
+    setSensorData(demoData);
+    setLastUpdate(new Date());
+    
+    setHistory(prev => {
+      const newHistory = [...prev, { ...demoData, time: new Date().toLocaleTimeString(), timestamp: Date.now() }];
+      return newHistory.slice(-50);
+    });
   };
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(() => {
+      if (settings.autoRefresh) {
+        fetchData();
+      }
+    }, settings.refreshInterval * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [settings.autoRefresh, settings.refreshInterval]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -516,32 +550,156 @@ export default function App() {
 
   const fetchWeatherData = async () => {
     try {
+      const { API_KEY, DEFAULT_LOCATION, ENDPOINTS, WEATHER_ICONS } = WEATHER_CONFIG;
+      const { lat, lon } = DEFAULT_LOCATION;
+      
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      // Fetch current weather
+      const currentResponse = await fetch(
+        `${ENDPOINTS.CURRENT}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`,
+        { signal: controller.signal }
+      );
+      const currentData = await currentResponse.json();
+      
+      // Fetch 5-day forecast
+      const forecastResponse = await fetch(
+        `${ENDPOINTS.FORECAST}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`,
+        { signal: controller.signal }
+      );
+      const forecastData = await forecastResponse.json();
+      
+      clearTimeout(timeoutId);
+      
+      const current = {
+        temp: currentData.main.temp,
+        humidity: currentData.main.humidity,
+        windSpeed: currentData.wind.speed * 3.6, // Convert m/s to km/h
+        condition: currentData.weather[0].description,
+        icon: WEATHER_ICONS[currentData.weather[0].icon] || '☀️',
+        pressure: currentData.main.pressure,
+        visibility: currentData.visibility / 1000, // Convert to km
+        uvIndex: 5 // OpenWeather UV requires separate API call
+      };
+      
+      // Process hourly forecast (next 24 hours)
+      const hourly = forecastData.list.slice(0, 8).map(item => ({
+        time: new Date(item.dt * 1000).toLocaleTimeString('en-US', { hour: 'numeric' }),
+        temp: Math.round(item.main.temp),
+        condition: item.weather[0].description,
+        icon: WEATHER_ICONS[item.weather[0].icon] || '☀️',
+        humidity: item.main.humidity,
+        windSpeed: Math.round(item.wind.speed * 3.6),
+        rain: item.rain ? item.rain['3h'] || 0 : 0
+      }));
+      
+      // Process daily forecast (group by day)
+      const dailyMap = new Map();
+      forecastData.list.forEach(item => {
+        const date = new Date(item.dt * 1000);
+        const dayKey = date.toDateString();
+        
+        if (!dailyMap.has(dayKey)) {
+          dailyMap.set(dayKey, {
+            date: dayKey,
+            temps: [],
+            conditions: [],
+            icons: [],
+            humidity: [],
+            rain: 0
+          });
+        }
+        
+        const day = dailyMap.get(dayKey);
+        day.temps.push(item.main.temp);
+        day.conditions.push(item.weather[0].description);
+        day.icons.push(WEATHER_ICONS[item.weather[0].icon] || '☀️');
+        day.humidity.push(item.main.humidity);
+        if (item.rain) day.rain += item.rain['3h'] || 0;
+      });
+      
+      const daily = Array.from(dailyMap.values()).slice(0, 5).map((day, index) => {
+        const date = new Date(day.date);
+        const dayName = index === 0 ? 'Today' : 
+                       index === 1 ? 'Tomorrow' : 
+                       date.toLocaleDateString('en-US', { weekday: 'short' });
+        
+        return {
+          day: dayName,
+          date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          high: Math.round(Math.max(...day.temps)),
+          low: Math.round(Math.min(...day.temps)),
+          condition: day.conditions[0],
+          icon: day.icons[0],
+          humidity: Math.round(day.humidity.reduce((a, b) => a + b) / day.humidity.length),
+          rain: Math.round(day.rain)
+        };
+      });
+      
+      setWeatherData({ current });
+      setHourlyForecast(hourly);
+      setDailyForecast(daily);
+      
+    } catch (error) {
+      console.log('Weather API failed, using demo data');
+      // Fallback demo data
       const demoWeather = {
         current: {
           temp: 26 + Math.random() * 4,
           humidity: 65 + Math.random() * 10,
           windSpeed: 8 + Math.random() * 5,
-          condition: ['Sunny', 'Partly Cloudy', 'Cloudy'][Math.floor(Math.random() * 3)],
-          icon: ['☀️', '⛅', '☁️'][Math.floor(Math.random() * 3)]
-        },
-        forecast: [
-          { day: 'Today', high: 28, low: 18, condition: 'Sunny', icon: '☀️', rain: 0 },
-          { day: 'Tomorrow', high: 26, low: 16, condition: 'Partly Cloudy', icon: '⛅', rain: 20 },
-          { day: 'Wed', high: 24, low: 15, condition: 'Rainy', icon: '🌧️', rain: 80 },
-          { day: 'Thu', high: 27, low: 17, condition: 'Sunny', icon: '☀️', rain: 10 },
-          { day: 'Fri', high: 29, low: 19, condition: 'Hot', icon: '🌡️', rain: 5 }
-        ]
+          condition: 'partly cloudy',
+          icon: '⛅',
+          pressure: 1013,
+          visibility: 10,
+          uvIndex: 5
+        }
       };
+      
+      const demoHourly = Array.from({ length: 8 }, (_, i) => ({
+        time: new Date(Date.now() + i * 3 * 60 * 60 * 1000).toLocaleTimeString('en-US', { hour: 'numeric' }),
+        temp: Math.round(25 + Math.random() * 6),
+        condition: ['sunny', 'partly cloudy', 'cloudy'][Math.floor(Math.random() * 3)],
+        icon: ['☀️', '⛅', '☁️'][Math.floor(Math.random() * 3)],
+        humidity: Math.round(60 + Math.random() * 20),
+        windSpeed: Math.round(5 + Math.random() * 10),
+        rain: Math.random() > 0.7 ? Math.round(Math.random() * 5) : 0
+      }));
+      
+      const today = new Date();
+      const demoDaily = Array.from({ length: 5 }, (_, i) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        const dayName = i === 0 ? 'Today' : 
+                       i === 1 ? 'Tomorrow' : 
+                       date.toLocaleDateString('en-US', { weekday: 'short' });
+        
+        return {
+          day: dayName,
+          date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          high: Math.round(25 + Math.random() * 8),
+          low: Math.round(15 + Math.random() * 5),
+          condition: ['sunny', 'partly cloudy', 'cloudy', 'rainy'][Math.floor(Math.random() * 4)],
+          icon: ['☀️', '⛅', '☁️', '🌧️'][Math.floor(Math.random() * 4)],
+          humidity: Math.round(60 + Math.random() * 20),
+          rain: Math.random() > 0.6 ? Math.round(Math.random() * 10) : 0
+        };
+      });
+      
       setWeatherData(demoWeather);
-    } catch (error) {
-      console.log('Weather fetch failed');
+      setHourlyForecast(demoHourly);
+      setDailyForecast(demoDaily);
     }
   };
 
   const ForecastView = () => {
     useEffect(() => {
-      fetchWeatherData();
-    }, []);
+      if (!weatherData) {
+        fetchWeatherData();
+      }
+    }, [weatherData]);
 
     if (!weatherData) {
       return (
@@ -554,33 +712,114 @@ export default function App() {
       );
     }
 
-    const getFarmingAdvice = (weather) => {
+    const getFarmingAdvice = (weather, hourly, daily) => {
       const advice = [];
-      if (weather.current.temp > 30) {
-        advice.push({ icon: '🌡️', text: 'High temperature - provide shade for crops' });
+      const { temperature, humidity, wind, rain } = FARMING_ADVICE;
+      
+      // Temperature advice
+      if (weather.current.temp > temperature.high.threshold) {
+        advice.push({ icon: '🌡️', text: temperature.high.advice });
+      } else if (weather.current.temp < temperature.low.threshold) {
+        advice.push({ icon: '🥶', text: temperature.low.advice });
       }
-      if (weather.forecast[1].rain > 70) {
-        advice.push({ icon: '🌧️', text: 'Heavy rain expected - check drainage systems' });
+      
+      // Humidity advice
+      if (weather.current.humidity > humidity.high.threshold) {
+        advice.push({ icon: '💨', text: humidity.high.advice });
+      } else if (weather.current.humidity < humidity.low.threshold) {
+        advice.push({ icon: '💧', text: humidity.low.advice });
       }
-      if (weather.current.windSpeed > 15) {
-        advice.push({ icon: '💨', text: 'Strong winds - secure plant supports' });
+      
+      // Wind advice
+      if (weather.current.windSpeed > wind.high.threshold) {
+        advice.push({ icon: '💨', text: wind.high.advice });
       }
-      if (weather.forecast[0].rain < 10 && weather.current.humidity < 50) {
-        advice.push({ icon: '💧', text: 'Dry conditions - increase irrigation' });
+      
+      // Rain advice
+      const tomorrowRain = daily[1]?.rain || 0;
+      if (tomorrowRain > rain.heavy.threshold) {
+        advice.push({ icon: '🌧️', text: rain.heavy.advice });
+      } else if (tomorrowRain > rain.light.threshold) {
+        advice.push({ icon: '🌦️', text: rain.light.advice });
+      } else if (tomorrowRain === 0 && weather.current.humidity < 50) {
+        advice.push({ icon: '☀️', text: rain.none.advice });
       }
+      
       return advice;
     };
 
-    const farmingAdvice = getFarmingAdvice(weatherData);
+    const farmingAdvice = getFarmingAdvice(weatherData, hourlyForecast, dailyForecast);
+
+    const ForecastToggle = () => (
+      <View style={styles.forecastToggle}>
+        <TouchableOpacity 
+          style={[styles.toggleButton, forecastType === 'hourly' && styles.toggleButtonActive]}
+          onPress={() => setForecastType('hourly')}
+        >
+          <Text style={[styles.toggleText, forecastType === 'hourly' && styles.toggleTextActive]}>⏰ Hourly</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.toggleButton, forecastType === 'daily' && styles.toggleButtonActive]}
+          onPress={() => setForecastType('daily')}
+        >
+          <Text style={[styles.toggleText, forecastType === 'daily' && styles.toggleTextActive]}>📅 Daily</Text>
+        </TouchableOpacity>
+      </View>
+    );
+
+    const HourlyForecast = () => (
+      <View style={styles.forecastContainer}>
+        <Text style={styles.forecastTitle}>⏰ 24-Hour Forecast</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hourlyScroll}>
+          {hourlyForecast.map((hour, index) => (
+            <View key={index} style={styles.hourlyItem}>
+              <Text style={styles.hourlyTime}>{hour.time}</Text>
+              <Text style={styles.hourlyIcon}>{hour.icon}</Text>
+              <Text style={styles.hourlyTemp}>{hour.temp}°</Text>
+              <Text style={styles.hourlyDetail}>💧 {hour.humidity}%</Text>
+              <Text style={styles.hourlyDetail}>💨 {hour.windSpeed}</Text>
+              {hour.rain > 0 && <Text style={styles.hourlyRain}>🌧️ {hour.rain}mm</Text>}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
+
+    const DailyForecast = () => (
+      <View style={styles.forecastContainer}>
+        <Text style={styles.forecastTitle}>📅 5-Day Forecast</Text>
+        {dailyForecast.map((day, index) => (
+          <View key={index} style={styles.forecastDay}>
+            <View style={styles.dayInfo}>
+              <Text style={styles.dayName}>{day.day}</Text>
+              <Text style={styles.dayDate}>{day.date}</Text>
+            </View>
+            <Text style={styles.dayIcon}>{day.icon}</Text>
+            <View style={styles.dayDetails}>
+              <Text style={styles.dayCondition}>{day.condition}</Text>
+              <View style={styles.dayStats}>
+                <Text style={styles.dayTemp}>{day.high}° / {day.low}°</Text>
+                <Text style={styles.dayHumidity}>💧 {day.humidity}%</Text>
+                {day.rain > 0 && <Text style={styles.dayRain}>🌧️ {day.rain}mm</Text>}
+              </View>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
 
     return (
       <ScrollView 
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchWeatherData} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
+          setRefreshing(true);
+          fetchWeatherData();
+          setRefreshing(false);
+        }} />}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.weatherHeader}>
           <Text style={styles.weatherTitle}>🌤️ Weather Forecast</Text>
-          <Text style={styles.weatherSubtitle}>Farm weather conditions</Text>
+          <Text style={styles.weatherSubtitle}>📍 {WEATHER_CONFIG.DEFAULT_LOCATION.name}</Text>
         </View>
 
         <View style={styles.currentWeatherCard}>
@@ -596,25 +835,28 @@ export default function App() {
               </View>
             </View>
           </View>
+          <View style={styles.additionalStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Pressure</Text>
+              <Text style={styles.statValue}>{weatherData.current.pressure} hPa</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Visibility</Text>
+              <Text style={styles.statValue}>{weatherData.current.visibility} km</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>UV Index</Text>
+              <Text style={styles.statValue}>{weatherData.current.uvIndex}</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.forecastContainer}>
-          <Text style={styles.forecastTitle}>📅 5-Day Forecast</Text>
-          {weatherData.forecast.map((day, index) => (
-            <View key={index} style={styles.forecastDay}>
-              <Text style={styles.dayName}>{day.day}</Text>
-              <Text style={styles.dayIcon}>{day.icon}</Text>
-              <View style={styles.dayDetails}>
-                <Text style={styles.dayCondition}>{day.condition}</Text>
-                <Text style={styles.dayTemp}>{day.high}° / {day.low}°</Text>
-                <Text style={styles.dayRain}>🌧️ {day.rain}%</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+        <ForecastToggle />
+        
+        {forecastType === 'hourly' ? <HourlyForecast /> : <DailyForecast />}
 
         <View style={styles.farmingAdviceCard}>
-          <Text style={styles.adviceTitle}>🌾 Farming Advice</Text>
+          <Text style={styles.adviceTitle}>🌾 Smart Farming Advice</Text>
           {farmingAdvice.length > 0 ? farmingAdvice.map((advice, index) => (
             <View key={index} style={styles.adviceItem}>
               <Text style={styles.adviceIcon}>{advice.icon}</Text>
@@ -627,6 +869,7 @@ export default function App() {
             </View>
           )}
         </View>
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     );
   };
@@ -830,6 +1073,18 @@ export default function App() {
       <View style={styles.header}>
         <Text style={styles.title}>🌾 Farm Dashboard</Text>
         <Text style={styles.subtitle}>Real-time crop monitoring</Text>
+        <View style={styles.statusContainer}>
+          <View style={[styles.statusDot, 
+            connectionStatus === 'connected' && styles.statusConnected,
+            connectionStatus === 'connecting' && styles.statusConnecting,
+            connectionStatus === 'disconnected' && styles.statusDisconnected
+          ]} />
+          <Text style={styles.statusText}>
+            {connectionStatus === 'connected' ? '🟢 Connected' :
+             connectionStatus === 'connecting' ? '🟡 Connecting...' :
+             '🔴 Demo Mode'}
+          </Text>
+        </View>
         {lastUpdate && (
           <Text style={styles.lastUpdate}>
             Last update: {lastUpdate.toLocaleTimeString()}
@@ -910,6 +1165,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
     marginTop: 10,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusConnected: {
+    backgroundColor: '#28a745',
+  },
+  statusConnecting: {
+    backgroundColor: '#ffc107',
+  },
+  statusDisconnected: {
+    backgroundColor: '#dc3545',
+  },
+  statusText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '600',
   },
   cardsContainer: {
     paddingHorizontal: 20,
@@ -1472,6 +1752,115 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
+  },
+  forecastToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    borderRadius: 15,
+    padding: 5,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: '#667eea',
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  toggleTextActive: {
+    color: 'white',
+  },
+  hourlyScroll: {
+    paddingVertical: 10,
+  },
+  hourlyItem: {
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    marginRight: 10,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    minWidth: 80,
+  },
+  hourlyTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  hourlyIcon: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  hourlyTemp: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  hourlyDetail: {
+    fontSize: 10,
+    color: '#666',
+    marginBottom: 2,
+  },
+  hourlyRain: {
+    fontSize: 10,
+    color: '#007bff',
+    fontWeight: '600',
+  },
+  dayInfo: {
+    width: 80,
+  },
+  dayDate: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
+  },
+  dayStats: {
+    alignItems: 'flex-end',
+  },
+  dayHumidity: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  additionalStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 5,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  bottomSpacer: {
+    height: 100,
   },
   settingsTitle: {
     fontSize: 22,

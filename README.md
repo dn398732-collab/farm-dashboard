@@ -25,15 +25,23 @@ Beautiful, farmer-friendly dashboard for DHT11 and Soil Moisture sensors connect
    npm start
    ```
 
-4. **Open dashboard:**
+4. **Setup Weather Forecast (Optional):**
+   - Get free API key from [OpenWeatherMap](https://openweathermap.org/api)
+   - Update `config.js` with your API key and farm coordinates
+   - See `WEATHER_SETUP.md` for detailed instructions
+
+5. **Open dashboard:**
    - Go to http://localhost:3000
-   - View real-time sensor data
+   - View real-time sensor data and weather forecast
 
 ## Features
 - 📊 Real-time sensor monitoring
 - 🎨 Beautiful, responsive design
 - 🚨 Smart farming alerts
 - 📈 Historical data charts
+- 🌤️ **Weather forecast with OpenWeatherMap API**
+- ⏰ **Hourly and daily weather predictions**
+- 🌾 **Smart farming advice based on weather**
 - 📱 Mobile-friendly interface
 
 ## Sensor Readings
