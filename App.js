@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, RefreshControl, TouchableOpacity, Dimensions, TextInput, Alert, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LineChart } from 'react-native-chart-kit';
 import { WEATHER_CONFIG, FARMING_ADVICE } from './config';
 import { NETWORK_CONFIG } from './network-config';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +29,9 @@ export default function App() {
     selectedCrop: 'Tomato',
     language: 'English'
   });
+  const [farmerInputs, setFarmerInputs] = useState([]);
+  const [newInputText, setNewInputText] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
   
   const crops = [
     { name: 'Tomato', icon: '🍅', tempRange: '20-30°C', humidity: '60-80%' },
@@ -1067,6 +1071,190 @@ export default function App() {
     );
   };
 
+  const FarmerInputView = () => {
+    const pickImage = async () => {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera roll permissions are required to select images.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    };
+
+    const takePhoto = async () => {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permissions are required to take photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    };
+
+    const submitInput = () => {
+      if (!newInputText.trim() && !selectedImage) {
+        Alert.alert('Input Required', 'Please add a message or select an image.');
+        return;
+      }
+
+      const newInput = {
+        id: Date.now(),
+        text: newInputText.trim(),
+        image: selectedImage,
+        timestamp: new Date(),
+        sensorData: { ...sensorData },
+        weather: weatherData?.current || null
+      };
+
+      setFarmerInputs(prev => [newInput, ...prev]);
+      setNewInputText('');
+      setSelectedImage(null);
+      Alert.alert('Success', 'Your input has been recorded!');
+    };
+
+    const deleteInput = (id) => {
+      Alert.alert(
+        'Delete Input',
+        'Are you sure you want to delete this input?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => {
+            setFarmerInputs(prev => prev.filter(input => input.id !== id));
+          }}
+        ]
+      );
+    };
+
+    return (
+      <ScrollView 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.inputHeader}>
+          <Text style={styles.inputTitle}>📝 Farmer Input</Text>
+          <Text style={styles.inputSubtitle}>Share crop photos and farming issues</Text>
+        </View>
+
+        <View style={styles.inputForm}>
+          <Text style={styles.formTitle}>🌾 Add New Input</Text>
+          
+          <View style={styles.textInputContainer}>
+            <Text style={styles.inputLabel}>💬 Message</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Describe any issues with your crops, observations, or questions..."
+              multiline
+              numberOfLines={4}
+              value={newInputText}
+              onChangeText={setNewInputText}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={styles.imageSection}>
+            <Text style={styles.inputLabel}>📷 Photo (Optional)</Text>
+            <View style={styles.imageButtons}>
+              <TouchableOpacity style={styles.imageButton} onPress={takePhoto}>
+                <Text style={styles.imageButtonIcon}>📸</Text>
+                <Text style={styles.imageButtonText}>Take Photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
+                <Text style={styles.imageButtonIcon}>🖼️</Text>
+                <Text style={styles.imageButtonText}>Choose Image</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {selectedImage && (
+              <View style={styles.selectedImageContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+                <TouchableOpacity 
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Text style={styles.removeImageText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity style={styles.submitButton} onPress={submitInput}>
+            <Text style={styles.submitButtonText}>📤 Submit Input</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.inputHistory}>
+          <Text style={styles.historyTitle}>📋 Previous Inputs ({farmerInputs.length})</Text>
+          
+          {farmerInputs.length === 0 ? (
+            <View style={styles.noInputs}>
+              <Text style={styles.noInputsIcon}>📝</Text>
+              <Text style={styles.noInputsText}>No inputs yet</Text>
+              <Text style={styles.noInputsSubtext}>Start by adding your first crop observation or issue</Text>
+            </View>
+          ) : (
+            farmerInputs.map((input) => (
+              <View key={input.id} style={styles.inputCard}>
+                <View style={styles.inputCardHeader}>
+                  <Text style={styles.inputDate}>
+                    📅 {input.timestamp.toLocaleDateString()} at {input.timestamp.toLocaleTimeString()}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.deleteButton}
+                    onPress={() => deleteInput(input.id)}
+                  >
+                    <Text style={styles.deleteButtonText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {input.text && (
+                  <Text style={styles.inputText}>{input.text}</Text>
+                )}
+                
+                {input.image && (
+                  <Image source={{ uri: input.image }} style={styles.inputImage} />
+                )}
+                
+                <View style={styles.inputContext}>
+                  <Text style={styles.contextTitle}>📊 Conditions at time of input:</Text>
+                  <View style={styles.contextData}>
+                    <Text style={styles.contextItem}>🌡️ {Math.round(input.sensorData.temperature)}°C</Text>
+                    <Text style={styles.contextItem}>💧 {Math.round(input.sensorData.humidity)}%</Text>
+                    <Text style={styles.contextItem}>🌱 {Math.round(input.sensorData.soilMoisture)}%</Text>
+                  </View>
+                  {input.weather && (
+                    <Text style={styles.contextWeather}>
+                      🌤️ {input.weather.condition}, {Math.round(input.weather.temp)}°C
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+        
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -1096,13 +1284,14 @@ export default function App() {
         {activeTab === 'dashboard' ? <DashboardView /> : 
          activeTab === 'history' ? <HistoryView /> : 
          activeTab === 'insights' ? <AIInsightsView /> : 
-         activeTab === 'forecast' ? <ForecastView /> : <SettingsView />}
+         activeTab === 'forecast' ? <ForecastView /> : 
+         activeTab === 'input' ? <FarmerInputView /> : <SettingsView />}
       </View>
 
       <View style={styles.bottomTabContainer}>
         <TabButton 
-          title="Dashboard" 
-          icon="📊" 
+          title="Home" 
+          icon="🏠" 
           isActive={activeTab === 'dashboard'} 
           onPress={() => setActiveTab('dashboard')} 
         />
@@ -1123,6 +1312,12 @@ export default function App() {
           icon="🌤️" 
           isActive={activeTab === 'forecast'} 
           onPress={() => setActiveTab('forecast')} 
+        />
+        <TabButton 
+          title="Input" 
+          icon="📝" 
+          isActive={activeTab === 'input'} 
+          onPress={() => setActiveTab('input')} 
         />
         <TabButton 
           title="Settings" 
@@ -2027,5 +2222,233 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     flex: 1,
+  },
+  inputHeader: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    borderRadius: 20,
+    padding: 25,
+    marginBottom: 15,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  inputTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  inputSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  inputForm: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+  },
+  textInputContainer: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    color: '#333',
+    backgroundColor: '#f8f9fa',
+    minHeight: 100,
+  },
+  imageSection: {
+    marginBottom: 20,
+  },
+  imageButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  imageButton: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  imageButtonIcon: {
+    fontSize: 24,
+    marginBottom: 5,
+  },
+  imageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  selectedImageContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  selectedImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    resizeMode: 'cover',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  submitButton: {
+    backgroundColor: '#667eea',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  inputHistory: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+  },
+  noInputs: {
+    alignItems: 'center',
+    paddingVertical: 30,
+  },
+  noInputsIcon: {
+    fontSize: 48,
+    marginBottom: 15,
+  },
+  noInputsText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '600',
+    marginBottom: 5,
+  },
+  noInputsSubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  inputCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#667eea',
+  },
+  inputCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  inputDate: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+  },
+  deleteButton: {
+    padding: 5,
+  },
+  deleteButtonText: {
+    fontSize: 16,
+  },
+  inputText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  inputImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    resizeMode: 'cover',
+    marginBottom: 10,
+  },
+  inputContext: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 5,
+  },
+  contextTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  contextData: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 5,
+  },
+  contextItem: {
+    fontSize: 11,
+    color: '#555',
+    fontWeight: '500',
+  },
+  contextWeather: {
+    fontSize: 11,
+    color: '#555',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
