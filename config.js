@@ -1,8 +1,7 @@
 // Weather API Configuration
 export const WEATHER_CONFIG = {
-  // Replace with your OpenWeatherMap API key
-  // Get your free API key from: https://openweathermap.org/api
-  API_KEY: 'YOUR_OPENWEATHER_API_KEY',
+  // i get free API key from: https://openweathermap.org/api
+  API_KEY: '669a5c628bacb08e351b9e99a4bcc4f9',
   
   // Default farm location (Delhi, India)
   // Replace with your farm's coordinates

@@ -5,6 +5,8 @@ import { LineChart } from 'react-native-chart-kit';
 import { WEATHER_CONFIG, FARMING_ADVICE } from './config';
 import { NETWORK_CONFIG } from './network-config';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { getTranslation } from './translations';
 
 const { width } = Dimensions.get('window');
 
@@ -27,7 +29,8 @@ export default function App() {
     farmName: 'My Farm',
     location: 'Farm Location',
     selectedCrop: 'Tomato',
-    language: 'English'
+    language: 'English',
+    coordinates: null
   });
   const [farmerInputs, setFarmerInputs] = useState([]);
   const [newInputText, setNewInputText] = useState('');
@@ -125,6 +128,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [settings.autoRefresh, settings.refreshInterval]);
 
+  useEffect(() => {
+    fetchWeatherData();
+  }, [settings.coordinates]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchData();
@@ -133,21 +140,23 @@ export default function App() {
 
   const getStatus = (value, type) => {
     if (type === 'temperature') {
-      if (value >= 20 && value <= 30) return { text: 'Optimal', color: '#28a745' };
-      if (value >= 15 && value <= 35) return { text: 'Good', color: '#ffc107' };
-      return { text: 'Critical', color: '#dc3545' };
+      if (value >= 20 && value <= 30) return { text: t('optimal'), color: '#28a745' };
+      if (value >= 15 && value <= 35) return { text: t('good'), color: '#ffc107' };
+      return { text: t('critical'), color: '#dc3545' };
     }
     if (type === 'humidity') {
-      if (value >= 40 && value <= 70) return { text: 'Optimal', color: '#28a745' };
-      if (value >= 30 && value <= 80) return { text: 'Good', color: '#ffc107' };
-      return { text: 'Critical', color: '#dc3545' };
+      if (value >= 40 && value <= 70) return { text: t('optimal'), color: '#28a745' };
+      if (value >= 30 && value <= 80) return { text: t('good'), color: '#ffc107' };
+      return { text: t('critical'), color: '#dc3545' };
     }
     if (type === 'soil') {
-      if (value >= 40 && value <= 80) return { text: 'Optimal', color: '#28a745' };
-      if (value >= 20 && value <= 90) return { text: 'Good', color: '#ffc107' };
-      return { text: 'Critical', color: '#dc3545' };
+      if (value >= 40 && value <= 80) return { text: t('optimal'), color: '#28a745' };
+      if (value >= 20 && value <= 90) return { text: t('good'), color: '#ffc107' };
+      return { text: t('critical'), color: '#dc3545' };
     }
   };
+
+  const t = (key) => getTranslation(settings.language, key);
 
   const SensorCard = ({ title, value, unit, emoji, type }) => {
     const status = getStatus(value, type);
@@ -201,21 +210,21 @@ export default function App() {
     >
       <View style={styles.cardsContainer}>
         <SensorCard 
-          title="Temperature" 
+          title={t('temperature')} 
           value={sensorData.temperature} 
           unit="°C" 
           emoji="🌡️" 
           type="temperature"
         />
         <SensorCard 
-          title="Humidity" 
+          title={t('humidity')} 
           value={sensorData.humidity} 
           unit="%" 
           emoji="💧" 
           type="humidity"
         />
         <SensorCard 
-          title="Soil Moisture" 
+          title={t('soilMoisture')} 
           value={sensorData.soilMoisture} 
           unit="%" 
           emoji="🌱" 
@@ -225,7 +234,7 @@ export default function App() {
 
       {history.length > 1 && (
         <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>📊 Recent Trends</Text>
+          <Text style={styles.chartTitle}>{t('recentTrends')}</Text>
           <LineChart
             data={chartData}
             width={width - 60}
@@ -247,27 +256,27 @@ export default function App() {
       )}
 
       <View style={styles.alertsContainer}>
-        <Text style={styles.alertsTitle}>🚨 Farm Alerts</Text>
+        <Text style={styles.alertsTitle}>{t('farmAlerts')}</Text>
         {sensorData.temperature > 35 && (
           <View style={[styles.alert, styles.alertDanger]}>
-            <Text style={styles.alertText}>🔥 High temperature! Provide cooling.</Text>
+            <Text style={styles.alertText}>{t('highTemp')}</Text>
           </View>
         )}
         {sensorData.humidity < 30 && (
           <View style={[styles.alert, styles.alertWarning]}>
-            <Text style={styles.alertText}>💨 Low humidity! Consider irrigation.</Text>
+            <Text style={styles.alertText}>{t('lowHumidity')}</Text>
           </View>
         )}
         {sensorData.soilMoisture < 20 && (
           <View style={[styles.alert, styles.alertDanger]}>
-            <Text style={styles.alertText}>🏜️ Soil too dry! Water immediately.</Text>
+            <Text style={styles.alertText}>{t('drySoil')}</Text>
           </View>
         )}
         {sensorData.temperature >= 20 && sensorData.temperature <= 30 && 
          sensorData.humidity >= 40 && sensorData.humidity <= 70 && 
          sensorData.soilMoisture >= 40 && (
           <View style={[styles.alert, styles.alertSuccess]}>
-            <Text style={styles.alertText}>✅ All conditions optimal!</Text>
+            <Text style={styles.alertText}>{t('allOptimal')}</Text>
           </View>
         )}
       </View>
@@ -296,14 +305,14 @@ export default function App() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.historyStats}>
-          <Text style={styles.historyTitle}>📈 Historical Analysis</Text>
-          <Text style={styles.historySubtitle}>Last {history.length} readings</Text>
+          <Text style={styles.historyTitle}>{t('historicalAnalysis')}</Text>
+          <Text style={styles.historySubtitle}>{t('lastReadings').replace('{count}', history.length)}</Text>
         </View>
 
         {history.length > 1 && (
           <>
             <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>🌡️ Temperature History</Text>
+              <Text style={styles.chartTitle}>{t('temperatureHistory')}</Text>
               <LineChart
                 data={tempData}
                 width={width - 60}
@@ -321,14 +330,14 @@ export default function App() {
                 style={styles.chart}
               />
               <View style={styles.statsRow}>
-                <Text style={styles.statText}>Avg: {(history.reduce((a,b) => a + b.temperature, 0) / history.length).toFixed(1)}°C</Text>
-                <Text style={styles.statText}>Max: {Math.max(...history.map(h => h.temperature)).toFixed(1)}°C</Text>
-                <Text style={styles.statText}>Min: {Math.min(...history.map(h => h.temperature)).toFixed(1)}°C</Text>
+                <Text style={styles.statText}>{t('avg')}: {(history.reduce((a,b) => a + b.temperature, 0) / history.length).toFixed(1)}°C</Text>
+                <Text style={styles.statText}>{t('max')}: {Math.max(...history.map(h => h.temperature)).toFixed(1)}°C</Text>
+                <Text style={styles.statText}>{t('min')}: {Math.min(...history.map(h => h.temperature)).toFixed(1)}°C</Text>
               </View>
             </View>
 
             <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>💧 Humidity History</Text>
+              <Text style={styles.chartTitle}>{t('humidityHistory')}</Text>
               <LineChart
                 data={humidityData}
                 width={width - 60}
@@ -346,14 +355,14 @@ export default function App() {
                 style={styles.chart}
               />
               <View style={styles.statsRow}>
-                <Text style={styles.statText}>Avg: {(history.reduce((a,b) => a + b.humidity, 0) / history.length).toFixed(1)}%</Text>
-                <Text style={styles.statText}>Max: {Math.max(...history.map(h => h.humidity)).toFixed(1)}%</Text>
-                <Text style={styles.statText}>Min: {Math.min(...history.map(h => h.humidity)).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('avg')}: {(history.reduce((a,b) => a + b.humidity, 0) / history.length).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('max')}: {Math.max(...history.map(h => h.humidity)).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('min')}: {Math.min(...history.map(h => h.humidity)).toFixed(1)}%</Text>
               </View>
             </View>
 
             <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>🌱 Soil Moisture History</Text>
+              <Text style={styles.chartTitle}>{t('soilMoistureHistory')}</Text>
               <LineChart
                 data={soilData}
                 width={width - 60}
@@ -371,9 +380,9 @@ export default function App() {
                 style={styles.chart}
               />
               <View style={styles.statsRow}>
-                <Text style={styles.statText}>Avg: {(history.reduce((a,b) => a + b.soilMoisture, 0) / history.length).toFixed(1)}%</Text>
-                <Text style={styles.statText}>Max: {Math.max(...history.map(h => h.soilMoisture)).toFixed(1)}%</Text>
-                <Text style={styles.statText}>Min: {Math.min(...history.map(h => h.soilMoisture)).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('avg')}: {(history.reduce((a,b) => a + b.soilMoisture, 0) / history.length).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('max')}: {Math.max(...history.map(h => h.soilMoisture)).toFixed(1)}%</Text>
+                <Text style={styles.statText}>{t('min')}: {Math.min(...history.map(h => h.soilMoisture)).toFixed(1)}%</Text>
               </View>
             </View>
           </>
@@ -465,12 +474,12 @@ export default function App() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.aiHeader}>
-          <Text style={styles.aiTitle}>🤖 AI Farm Assistant</Text>
-          <Text style={styles.aiSubtitle}>Intelligent crop analysis & recommendations</Text>
+          <Text style={styles.aiTitle}>{t('aiAssistant')}</Text>
+          <Text style={styles.aiSubtitle}>{t('aiSubtitle')}</Text>
         </View>
 
         <View style={styles.healthScoreCard}>
-          <Text style={styles.healthTitle}>🌱 Farm Health Score</Text>
+          <Text style={styles.healthTitle}>{t('farmHealthScore')}</Text>
           <View style={styles.scoreCircle}>
             <Text style={[styles.scoreText, { color: getScoreColor(healthScore) }]}>
               {healthScore}
@@ -478,14 +487,14 @@ export default function App() {
             <Text style={styles.scoreLabel}>/ 100</Text>
           </View>
           <Text style={styles.scoreDescription}>
-            {healthScore >= 80 ? 'Excellent conditions!' : 
-             healthScore >= 60 ? 'Good, minor improvements needed' : 
-             'Attention required - multiple issues detected'}
+            {healthScore >= 80 ? t('excellentConditions') : 
+             healthScore >= 60 ? t('goodMinorImprovements') : 
+             t('attentionRequired')}
           </Text>
         </View>
 
         <View style={styles.insightsContainer}>
-          <Text style={styles.insightsTitle}>💡 Smart Insights</Text>
+          <Text style={styles.insightsTitle}>{t('smartInsights')}</Text>
           {insights.length > 0 ? insights.map((insight, index) => (
             <View key={index} style={[
               styles.insightCard,
@@ -504,18 +513,18 @@ export default function App() {
           )) : (
             <View style={styles.noInsights}>
               <Text style={styles.noInsightsIcon}>📊</Text>
-              <Text style={styles.noInsightsText}>Collecting data for AI analysis...</Text>
-              <Text style={styles.noInsightsSubtext}>Insights will appear after a few readings</Text>
+              <Text style={styles.noInsightsText}>{t('collectingData')}</Text>
+              <Text style={styles.noInsightsSubtext}>{t('insightsWillAppear')}</Text>
             </View>
           )}
         </View>
 
         <View style={styles.recommendationsCard}>
-          <Text style={styles.recTitle}>🎯 AI Recommendations</Text>
+          <Text style={styles.recTitle}>{t('aiRecommendations')}</Text>
           <View style={styles.recItem}>
             <Text style={styles.recIcon}>🌡️</Text>
             <View style={styles.recContent}>
-              <Text style={styles.recLabel}>Temperature</Text>
+              <Text style={styles.recLabel}>{t('temperature')}</Text>
               <Text style={styles.recText}>
                 {avgTemp < 20 ? 'Consider greenhouse heating or row covers' :
                  avgTemp > 30 ? 'Install shade cloth or misting system' :
@@ -527,7 +536,7 @@ export default function App() {
           <View style={styles.recItem}>
             <Text style={styles.recIcon}>💧</Text>
             <View style={styles.recContent}>
-              <Text style={styles.recLabel}>Humidity</Text>
+              <Text style={styles.recLabel}>{t('humidity')}</Text>
               <Text style={styles.recText}>
                 {avgHumid < 40 ? 'Increase irrigation frequency or add mulch' :
                  avgHumid > 70 ? 'Improve ventilation to prevent fungal issues' :
@@ -539,7 +548,7 @@ export default function App() {
           <View style={styles.recItem}>
             <Text style={styles.recIcon}>🌱</Text>
             <View style={styles.recContent}>
-              <Text style={styles.recLabel}>Soil Moisture</Text>
+              <Text style={styles.recLabel}>{t('soilMoisture')}</Text>
               <Text style={styles.recText}>
                 {avgSoil < 30 ? 'Install drip irrigation for consistent watering' :
                  avgSoil > 80 ? 'Check drainage to prevent root rot' :
@@ -555,17 +564,28 @@ export default function App() {
   const fetchWeatherData = async () => {
     try {
       const { API_KEY, DEFAULT_LOCATION, ENDPOINTS, WEATHER_ICONS } = WEATHER_CONFIG;
-      const { lat, lon } = DEFAULT_LOCATION;
+      const coords = settings.coordinates || DEFAULT_LOCATION;
+      const { lat, lon } = coords;
+      
+      // Check if valid API key exists
+      if (!API_KEY || API_KEY === 'YOUR_OPENWEATHER_API_KEY') {
+        throw new Error('Invalid API key');
+      }
       
       // Create abort controller for timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       
       // Fetch current weather
       const currentResponse = await fetch(
         `${ENDPOINTS.CURRENT}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`,
         { signal: controller.signal }
       );
+      
+      if (!currentResponse.ok) {
+        throw new Error('Weather API failed');
+      }
+      
       const currentData = await currentResponse.json();
       
       // Fetch 5-day forecast
@@ -573,6 +593,11 @@ export default function App() {
         `${ENDPOINTS.FORECAST}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`,
         { signal: controller.signal }
       );
+      
+      if (!forecastResponse.ok) {
+        throw new Error('Forecast API failed');
+      }
+      
       const forecastData = await forecastResponse.json();
       
       clearTimeout(timeoutId);
@@ -647,7 +672,7 @@ export default function App() {
       setDailyForecast(daily);
       
     } catch (error) {
-      console.log('Weather API failed, using demo data');
+      console.log('Weather API failed, using demo data:', error.message);
       // Fallback demo data
       const demoWeather = {
         current: {
@@ -710,7 +735,7 @@ export default function App() {
         <ScrollView>
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingIcon}>🌤️</Text>
-            <Text style={styles.loadingText}>Loading weather data...</Text>
+            <Text style={styles.loadingText}>{t('loadingWeather')}</Text>
           </View>
         </ScrollView>
       );
@@ -760,20 +785,20 @@ export default function App() {
           style={[styles.toggleButton, forecastType === 'hourly' && styles.toggleButtonActive]}
           onPress={() => setForecastType('hourly')}
         >
-          <Text style={[styles.toggleText, forecastType === 'hourly' && styles.toggleTextActive]}>⏰ Hourly</Text>
+          <Text style={[styles.toggleText, forecastType === 'hourly' && styles.toggleTextActive]}>{t('hourly')}</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.toggleButton, forecastType === 'daily' && styles.toggleButtonActive]}
           onPress={() => setForecastType('daily')}
         >
-          <Text style={[styles.toggleText, forecastType === 'daily' && styles.toggleTextActive]}>📅 Daily</Text>
+          <Text style={[styles.toggleText, forecastType === 'daily' && styles.toggleTextActive]}>{t('daily')}</Text>
         </TouchableOpacity>
       </View>
     );
 
     const HourlyForecast = () => (
       <View style={styles.forecastContainer}>
-        <Text style={styles.forecastTitle}>⏰ 24-Hour Forecast</Text>
+        <Text style={styles.forecastTitle}>{t('hourlyForecast')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hourlyScroll}>
           {hourlyForecast.map((hour, index) => (
             <View key={index} style={styles.hourlyItem}>
@@ -791,7 +816,7 @@ export default function App() {
 
     const DailyForecast = () => (
       <View style={styles.forecastContainer}>
-        <Text style={styles.forecastTitle}>📅 5-Day Forecast</Text>
+        <Text style={styles.forecastTitle}>{t('dailyForecast')}</Text>
         {dailyForecast.map((day, index) => (
           <View key={index} style={styles.forecastDay}>
             <View style={styles.dayInfo}>
@@ -822,12 +847,12 @@ export default function App() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.weatherHeader}>
-          <Text style={styles.weatherTitle}>🌤️ Weather Forecast</Text>
-          <Text style={styles.weatherSubtitle}>📍 {WEATHER_CONFIG.DEFAULT_LOCATION.name}</Text>
+          <Text style={styles.weatherTitle}>{t('weatherForecast')}</Text>
+          <Text style={styles.weatherSubtitle}>📍 {settings.location}</Text>
         </View>
 
         <View style={styles.currentWeatherCard}>
-          <Text style={styles.currentTitle}>Current Weather</Text>
+          <Text style={styles.currentTitle}>{t('currentWeather')}</Text>
           <View style={styles.currentWeatherContent}>
             <Text style={styles.weatherIcon}>{weatherData.current.icon}</Text>
             <View style={styles.currentDetails}>
@@ -841,15 +866,15 @@ export default function App() {
           </View>
           <View style={styles.additionalStats}>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Pressure</Text>
+              <Text style={styles.statLabel}>{t('pressure')}</Text>
               <Text style={styles.statValue}>{weatherData.current.pressure} hPa</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Visibility</Text>
+              <Text style={styles.statLabel}>{t('visibility')}</Text>
               <Text style={styles.statValue}>{weatherData.current.visibility} km</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>UV Index</Text>
+              <Text style={styles.statLabel}>{t('uvIndex')}</Text>
               <Text style={styles.statValue}>{weatherData.current.uvIndex}</Text>
             </View>
           </View>
@@ -860,7 +885,7 @@ export default function App() {
         {forecastType === 'hourly' ? <HourlyForecast /> : <DailyForecast />}
 
         <View style={styles.farmingAdviceCard}>
-          <Text style={styles.adviceTitle}>🌾 Smart Farming Advice</Text>
+          <Text style={styles.adviceTitle}>{t('smartFarmingAdvice')}</Text>
           {farmingAdvice.length > 0 ? farmingAdvice.map((advice, index) => (
             <View key={index} style={styles.adviceItem}>
               <Text style={styles.adviceIcon}>{advice.icon}</Text>
@@ -869,7 +894,7 @@ export default function App() {
           )) : (
             <View style={styles.adviceItem}>
               <Text style={styles.adviceIcon}>✅</Text>
-              <Text style={styles.adviceText}>Weather conditions are favorable for farming</Text>
+              <Text style={styles.adviceText}>{t('favorableConditions')}</Text>
             </View>
           )}
         </View>
@@ -885,6 +910,51 @@ export default function App() {
 
     const updateSetting = (key, value) => {
       setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    const requestLocation = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        
+        if (status !== 'granted') {
+          Alert.alert(
+            'Location Permission Required',
+            'Please enable location services to get weather for your current location.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        Alert.alert('Getting Location', 'Please wait...');
+        
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced
+        });
+        
+        const { latitude, longitude } = location.coords;
+        
+        const geocode = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude
+        });
+        
+        const locationName = geocode[0] 
+          ? `${geocode[0].city || geocode[0].district || geocode[0].subregion || 'Unknown'}, ${geocode[0].region || geocode[0].country || ''}`.trim()
+          : `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+        
+        setSettings(prev => ({
+          ...prev,
+          location: locationName,
+          coordinates: { lat: latitude, lon: longitude, name: locationName }
+        }));
+        
+        setWeatherData(null);
+        await fetchWeatherData();
+        
+        Alert.alert('Success', `Location updated to: ${locationName}\nWeather forecast updated!`);
+      } catch (error) {
+        Alert.alert('Error', 'Failed to get location. Please try again.');
+      }
     };
 
     const SettingItem = ({ icon, title, subtitle, value, onPress, type = 'toggle' }) => (
@@ -1015,7 +1085,7 @@ export default function App() {
             title="Location"
             subtitle={settings.location}
             type="arrow"
-            onPress={() => {}}
+            onPress={requestLocation}
           />
         </View>
 
@@ -1149,18 +1219,18 @@ export default function App() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.inputHeader}>
-          <Text style={styles.inputTitle}>📝 Farmer Input</Text>
-          <Text style={styles.inputSubtitle}>Share crop photos and farming issues</Text>
+          <Text style={styles.inputTitle}>{t('farmerInput')}</Text>
+          <Text style={styles.inputSubtitle}>{t('farmerInputSubtitle')}</Text>
         </View>
 
         <View style={styles.inputForm}>
-          <Text style={styles.formTitle}>🌾 Add New Input</Text>
+          <Text style={styles.formTitle}>{t('addNewInput')}</Text>
           
           <View style={styles.textInputContainer}>
-            <Text style={styles.inputLabel}>💬 Message</Text>
+            <Text style={styles.inputLabel}>{t('message')}</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="Describe any issues with your crops, observations, or questions..."
+              placeholder={t('messagePlaceholder')}
               multiline
               numberOfLines={4}
               value={newInputText}
@@ -1170,15 +1240,15 @@ export default function App() {
           </View>
 
           <View style={styles.imageSection}>
-            <Text style={styles.inputLabel}>📷 Photo (Optional)</Text>
+            <Text style={styles.inputLabel}>{t('photoOptional')}</Text>
             <View style={styles.imageButtons}>
               <TouchableOpacity style={styles.imageButton} onPress={takePhoto}>
                 <Text style={styles.imageButtonIcon}>📸</Text>
-                <Text style={styles.imageButtonText}>Take Photo</Text>
+                <Text style={styles.imageButtonText}>{t('takePhoto')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
                 <Text style={styles.imageButtonIcon}>🖼️</Text>
-                <Text style={styles.imageButtonText}>Choose Image</Text>
+                <Text style={styles.imageButtonText}>{t('chooseImage')}</Text>
               </TouchableOpacity>
             </View>
             
@@ -1196,18 +1266,18 @@ export default function App() {
           </View>
 
           <TouchableOpacity style={styles.submitButton} onPress={submitInput}>
-            <Text style={styles.submitButtonText}>📤 Submit Input</Text>
+            <Text style={styles.submitButtonText}>{t('submitInput')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.inputHistory}>
-          <Text style={styles.historyTitle}>📋 Previous Inputs ({farmerInputs.length})</Text>
+          <Text style={styles.historyTitle}>{t('previousInputs')} ({farmerInputs.length})</Text>
           
           {farmerInputs.length === 0 ? (
             <View style={styles.noInputs}>
               <Text style={styles.noInputsIcon}>📝</Text>
-              <Text style={styles.noInputsText}>No inputs yet</Text>
-              <Text style={styles.noInputsSubtext}>Start by adding your first crop observation or issue</Text>
+              <Text style={styles.noInputsText}>{t('noInputsYet')}</Text>
+              <Text style={styles.noInputsSubtext}>{t('startAdding')}</Text>
             </View>
           ) : (
             farmerInputs.map((input) => (
@@ -1233,7 +1303,7 @@ export default function App() {
                 )}
                 
                 <View style={styles.inputContext}>
-                  <Text style={styles.contextTitle}>📊 Conditions at time of input:</Text>
+                  <Text style={styles.contextTitle}>{t('conditionsAtTime')}</Text>
                   <View style={styles.contextData}>
                     <Text style={styles.contextItem}>🌡️ {Math.round(input.sensorData.temperature)}°C</Text>
                     <Text style={styles.contextItem}>💧 {Math.round(input.sensorData.humidity)}%</Text>
@@ -1259,8 +1329,8 @@ export default function App() {
     <View style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <Text style={styles.title}>🌾 Farm Dashboard</Text>
-        <Text style={styles.subtitle}>Real-time crop monitoring</Text>
+        <Text style={styles.title}>{t('appTitle')}</Text>
+        <Text style={styles.subtitle}>{t('appSubtitle')}</Text>
         <View style={styles.statusContainer}>
           <View style={[styles.statusDot, 
             connectionStatus === 'connected' && styles.statusConnected,
@@ -1268,14 +1338,14 @@ export default function App() {
             connectionStatus === 'disconnected' && styles.statusDisconnected
           ]} />
           <Text style={styles.statusText}>
-            {connectionStatus === 'connected' ? '🟢 Connected' :
-             connectionStatus === 'connecting' ? '🟡 Connecting...' :
-             '🔴 Demo Mode'}
+            {connectionStatus === 'connected' ? t('connected') :
+             connectionStatus === 'connecting' ? t('connecting') :
+             t('demoMode')}
           </Text>
         </View>
         {lastUpdate && (
           <Text style={styles.lastUpdate}>
-            Last update: {lastUpdate.toLocaleTimeString()}
+            {t('lastUpdate')}: {lastUpdate.toLocaleTimeString()}
           </Text>
         )}
       </View>
@@ -1290,37 +1360,37 @@ export default function App() {
 
       <View style={styles.bottomTabContainer}>
         <TabButton 
-          title="Home" 
+          title={t('home')} 
           icon="🏠" 
           isActive={activeTab === 'dashboard'} 
           onPress={() => setActiveTab('dashboard')} 
         />
         <TabButton 
-          title="History" 
+          title={t('history')} 
           icon="📈" 
           isActive={activeTab === 'history'} 
           onPress={() => setActiveTab('history')} 
         />
         <TabButton 
-          title="AI Insights" 
+          title={t('aiInsights')} 
           icon="🤖" 
           isActive={activeTab === 'insights'} 
           onPress={() => setActiveTab('insights')} 
         />
         <TabButton 
-          title="Forecast" 
+          title={t('forecast')} 
           icon="🌤️" 
           isActive={activeTab === 'forecast'} 
           onPress={() => setActiveTab('forecast')} 
         />
         <TabButton 
-          title="Input" 
+          title={t('input')} 
           icon="📝" 
           isActive={activeTab === 'input'} 
           onPress={() => setActiveTab('input')} 
         />
         <TabButton 
-          title="Settings" 
+          title={t('settings')} 
           icon="⚙️" 
           isActive={activeTab === 'settings'} 
           onPress={() => setActiveTab('settings')} 
